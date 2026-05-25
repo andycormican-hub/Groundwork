@@ -14,7 +14,7 @@ app.use((req, res, next) => {
 
 app.post('/', (req, res) => {
   const payload = JSON.stringify({
-    model: 'claude-sonnet-4-20250514',
+    model: 'model: 'claude-sonnet-4-5',',
     max_tokens: 800,
     system: req.body.system,
     messages: req.body.messages
