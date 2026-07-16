@@ -11,36 +11,8 @@ app.use((req, res, next) => {
   next();
 });
 
-// Supabase helper
-function supabaseRequest(method, path, body, key) {
-  return new Promise((resolve, reject) => {
-    const payload = body ? JSON.stringify(body) : null;
-    const options = {
-      hostname: 'jfenghwapvzvnowifsut.supabase.co',
-      path: `/rest/v1/${path}`,
-      method,
-      headers: {
-        'Content-Type': 'application/json',
-        'apikey': key,
-        'Authorization': `Bearer ${key}`,
-        'Prefer': 'return=representation'
-      }
-    };
-    if (payload) options.headers['Content-Length'] = Buffer.byteLength(payload);
-    const req = https.request(options, (apiRes) => {
-      let data = '';
-      apiRes.on('data', chunk => data += chunk);
-      apiRes.on('end', () => resolve({ status: apiRes.statusCode, data: data ? JSON.parse(data) : null }));
-    });
-    req.on('error', reject);
-    if (payload) req.write(payload);
-    req.end();
-  });
-}
-
-// Chris route
 app.get('/', (req, res) => {
-  res.json({ status: 'Groundwork backend online' });
+  res.json({ status: 'Chris is online' });
 });
 
 app.post('/', (req, res) => {
@@ -74,42 +46,46 @@ app.post('/', (req, res) => {
       res.send(data);
     });
   });
+
   apiReq.on('error', (err) => res.status(500).json({ error: err.message }));
   apiReq.write(payload);
   apiReq.end();
 });
 
-// Save post
-app.post('/save-post', async (req, res) => {
+app.post('/save-post', (req, res) => {
   const sbKey = process.env.SUPABASE_SERVICE_KEY;
   if (!sbKey) return res.status(500).json({ error: 'No Supabase key' });
-  try {
-    const result = await supabaseRequest('POST', 'Posts', {
-      user_id: req.body.user_id || null,
-      content: req.body.content,
-      avatar: req.body.avatar || '🏔️',
-      username: req.body.username || 'Anonymous'
-    }, sbKey);
-    console.log('Post saved:', result.status);
-    res.json({ success: true });
-  } catch(err) {
-    console.error('Save post error:', err.message);
-    res.status(500).json({ error: err.message });
-  }
-});
 
-// Get posts
-app.get('/get-posts', async (req, res) => {
-  const sbKey = process.env.SUPABASE_SERVICE_KEY;
-  if (!sbKey) return res.status(500).json({ error: 'No Supabase key' });
-  try {
-    const result = await supabaseRequest('GET', 'Posts?order=created_at.desc&limit=50', null, sbKey);
-    res.json(result.data || []);
-  } catch(err) {
-    console.error('Get posts error:', err.message);
-    res.status(500).json({ error: err.message });
-  }
-});
+  const payload = JSON.stringify({
+    user_id: req.body.user_id || null,
+    content: req.body.content,
+    avatar: req.body.avatar || '🏔️',
+    username: req.body.username || 'Anonymous'
+  });
 
-const PORT = process.env.PORT || 3000;
-app.listen(PORT, () => console.log(`Groundwork backend running on port ${PORT}`));
+  const options = {
+    hostname: 'jfenghwapvzvnowifsut.supabase.co',
+    path: '/rest/v1/Posts',
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+      'apikey': sbKey,
+      'Authorization': 'Bearer ' + sbKey,
+      'Prefer': 'return=minimal',
+      'Content-Length': Buffer.byteLength(payload)
+    }
+  };
+
+  const apiReq = https.request(options, (apiRes) => {
+    let data = '';
+    apiRes.on('data', chunk => data += chunk);
+    apiRes.on('end', () => {
+      console.log('Supabase response:', apiRes.statusCode, data);
+      res.json({ success: true, status: apiRes.statusCode });
+    });
+  });
+
+  apiReq.on('error', (err) => {
+    console.error('Supabase error:', err.message);
+    res.status(500).json({ error: err.message });
+  });
