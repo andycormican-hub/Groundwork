@@ -89,3 +89,10 @@ app.post('/save-post', (req, res) => {
     console.error('Supabase error:', err.message);
     res.status(500).json({ error: err.message });
   });
+
+  apiReq.write(payload);
+  apiReq.end();
+});
+
+const PORT = process.env.PORT || 3000;
+app.listen(PORT, () => console.log('Chris is running on port ' + PORT));
