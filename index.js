@@ -93,6 +93,7 @@ app.post('/save-post', (req, res) => {
   apiReq.write(payload);
   apiReq.end();
 });
+
 app.get('/get-posts', (req, res) => {
   const sbKey = process.env.SUPABASE_SERVICE_KEY;
   if (!sbKey) return res.status(500).json({ error: 'No Supabase key' });
@@ -125,5 +126,50 @@ app.get('/get-posts', (req, res) => {
 
   apiReq.end();
 });
+
+app.post('/save-user', (req, res) => {
+  const sbKey = process.env.SUPABASE_SERVICE_KEY;
+  if (!sbKey) return res.status(500).json({ error: 'No Supabase key' });
+
+  const payload = JSON.stringify({
+    email: req.body.email,
+    name: req.body.name,
+    avatar: req.body.avatar || '🏔️',
+    building: req.body.building || 'Building something real',
+    streak: 0,
+    tier: 'free'
+  });
+
+  const options = {
+    hostname: 'jfenghwapvzvnowifsut.supabase.co',
+    path: '/rest/v1/Users',
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+      'apikey': sbKey,
+      'Authorization': 'Bearer ' + sbKey,
+      'Prefer': 'return=minimal',
+      'Content-Length': Buffer.byteLength(payload)
+    }
+  };
+
+  const apiReq = https.request(options, (apiRes) => {
+    let data = '';
+    apiRes.on('data', chunk => data += chunk);
+    apiRes.on('end', () => {
+      console.log('User saved:', apiRes.statusCode, data);
+      res.json({ success: true });
+    });
+  });
+
+  apiReq.on('error', (err) => {
+    console.error('Save user error:', err.message);
+    res.status(500).json({ error: err.message });
+  });
+
+  apiReq.write(payload);
+  apiReq.end();
+});
+
 const PORT = process.env.PORT || 3000;
 app.listen(PORT, () => console.log('Chris is running on port ' + PORT));
