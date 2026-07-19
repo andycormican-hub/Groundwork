@@ -171,5 +171,46 @@ app.post('/save-user', (req, res) => {
   apiReq.end();
 });
 
+app.post('/save-conversation', (req, res) => {
+  const sbKey = process.env.SUPABASE_SERVICE_KEY;
+  if (!sbKey) return res.status(500).json({ error: 'No Supabase key' });
+
+  const payload = JSON.stringify({
+    user_id: req.body.user_id || null,
+    role: req.body.role,
+    content: req.body.content
+  });
+
+  const options = {
+    hostname: 'jfenghwapvzvnowifsut.supabase.co',
+    path: '/rest/v1/conversations',
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+      'apikey': sbKey,
+      'Authorization': 'Bearer ' + sbKey,
+      'Prefer': 'return=minimal',
+      'Content-Length': Buffer.byteLength(payload)
+    }
+  };
+
+  const apiReq = https.request(options, (apiRes) => {
+    let data = '';
+    apiRes.on('data', chunk => data += chunk);
+    apiRes.on('end', () => {
+      console.log('Conversation saved:', apiRes.statusCode);
+      res.json({ success: true });
+    });
+  });
+
+  apiReq.on('error', (err) => {
+    console.error('Save conversation error:', err.message);
+    res.status(500).json({ error: err.message });
+  });
+
+  apiReq.write(payload);
+  apiReq.end();
+});
+
 const PORT = process.env.PORT || 3000;
 app.listen(PORT, () => console.log('Chris is running on port ' + PORT));
