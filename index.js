@@ -212,5 +212,83 @@ app.post('/save-conversation', (req, res) => {
   apiReq.end();
 });
 
+app.post('/save-message', (req, res) => {
+  const sbKey = process.env.SUPABASE_SERVICE_KEY;
+  if (!sbKey) return res.status(500).json({ error: 'No Supabase key' });
+
+  const payload = JSON.stringify({
+    user_id: req.body.user_id || null,
+    username: req.body.username || 'Anonymous',
+    avatar: req.body.avatar || '🏔️',
+    content: req.body.content,
+    room: req.body.room || 'general'
+  });
+
+  const options = {
+    hostname: 'jfenghwapvzvnowifsut.supabase.co',
+    path: '/rest/v1/messages',
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+      'apikey': sbKey,
+      'Authorization': 'Bearer ' + sbKey,
+      'Prefer': 'return=minimal',
+      'Content-Length': Buffer.byteLength(payload)
+    }
+  };
+
+  const apiReq = https.request(options, (apiRes) => {
+    let data = '';
+    apiRes.on('data', chunk => data += chunk);
+    apiRes.on('end', () => {
+      console.log('Message saved:', apiRes.statusCode);
+      res.json({ success: true });
+    });
+  });
+
+  apiReq.on('error', (err) => {
+    console.error('Save message error:', err.message);
+    res.status(500).json({ error: err.message });
+  });
+
+  apiReq.write(payload);
+  apiReq.end();
+});
+
+app.get('/get-messages', (req, res) => {
+  const sbKey = process.env.SUPABASE_SERVICE_KEY;
+  if (!sbKey) return res.status(500).json({ error: 'No Supabase key' });
+
+  const room = req.query.room || 'general';
+
+  const options = {
+    hostname: 'jfenghwapvzvnowifsut.supabase.co',
+    path: `/rest/v1/messages?room=eq.${room}&order=created_at.asc&limit=100`,
+    method: 'GET',
+    headers: {
+      'Content-Type': 'application/json',
+      'apikey': sbKey,
+      'Authorization': 'Bearer ' + sbKey
+    }
+  };
+
+  const apiReq = https.request(options, (apiRes) => {
+    let data = '';
+    apiRes.on('data', chunk => data += chunk);
+    apiRes.on('end', () => {
+      console.log('Get messages status:', apiRes.statusCode);
+      res.header('Content-Type', 'application/json');
+      res.send(data);
+    });
+  });
+
+  apiReq.on('error', (err) => {
+    console.error('Get messages error:', err.message);
+    res.status(500).json({ error: err.message });
+  });
+
+  apiReq.end();
+});
+
 const PORT = process.env.PORT || 3000;
 app.listen(PORT, () => console.log('Chris is running on port ' + PORT));
