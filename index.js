@@ -263,7 +263,7 @@ app.get('/get-messages', (req, res) => {
 
   const options = {
     hostname: 'jfenghwapvzvnowifsut.supabase.co',
-    path: `/rest/v1/messages?room=eq.${room}&order=created_at.asc&limit=100`,
+    path: `/rest/v1/messages?select=*&room=eq.${encodeURIComponent(room)}&order=created_at.asc&limit=100`,
     method: 'GET',
     headers: {
       'Content-Type': 'application/json',
