@@ -290,5 +290,177 @@ app.get('/get-messages', (req, res) => {
   apiReq.end();
 });
 
+// ══ CONNECT & DM ROUTES ══
+
+function sbRequest(method, path, body, sbKey) {
+  return new Promise((resolve, reject) => {
+    const payload = body ? JSON.stringify(body) : null;
+    const options = {
+      hostname: 'jfenghwapvzvnowifsut.supabase.co',
+      path: `/rest/v1/${path}`,
+      method,
+      headers: {
+        'Content-Type': 'application/json',
+        'apikey': sbKey,
+        'Authorization': 'Bearer ' + sbKey,
+        'Prefer': 'return=representation'
+      }
+    };
+    if (payload) options.headers['Content-Length'] = Buffer.byteLength(payload);
+    const req = https.request(options, (apiRes) => {
+      let data = '';
+      apiRes.on('data', chunk => data += chunk);
+      apiRes.on('end', () => resolve({ status: apiRes.statusCode, data: data ? JSON.parse(data) : null }));
+    });
+    req.on('error', reject);
+    if (payload) req.write(payload);
+    req.end();
+  });
+}
+
+// Get a suggested connection based on shared pillar
+app.get('/get-suggestion', async (req, res) => {
+  const sbKey = process.env.SUPABASE_SERVICE_KEY;
+  const { user_id, pillar } = req.query;
+  if (!sbKey || !user_id) return res.status(400).json({ error: 'Missing params' });
+  try {
+    // Get users who share the same pillar and are not already connected
+    const result = await sbRequest('GET',
+      `Users?select=*&id=neq.${encodeURIComponent(user_id)}&limit=10`,
+      null, sbKey);
+    // Get existing connections for this user
+    const conns = await sbRequest('GET',
+      `connections?select=*&or=(requester_id.eq.${user_id},recipient_id.eq.${user_id})`,
+      null, sbKey);
+    const connectedIds = (conns.data || []).flatMap(c => [c.requester_id, c.recipient_id]);
+    const suggestions = (result.data || []).filter(u =>
+      u.id !== user_id && !connectedIds.includes(u.id)
+    );
+    const suggestion = suggestions[Math.floor(Math.random() * suggestions.length)] || null;
+    res.json(suggestion);
+  } catch(err) {
+    console.error('Get suggestion error:', err.message);
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// Send a connection request
+app.post('/send-connection-request', async (req, res) => {
+  const sbKey = process.env.SUPABASE_SERVICE_KEY;
+  const { requester_id, recipient_id, opener, pillar } = req.body;
+  if (!sbKey || !requester_id || !recipient_id) return res.status(400).json({ error: 'Missing params' });
+  try {
+    const result = await sbRequest('POST', 'connections', {
+      requester_id, recipient_id, opener, pillar, status: 'pending'
+    }, sbKey);
+    console.log('Connection request sent:', result.status);
+    res.json({ success: true });
+  } catch(err) {
+    console.error('Send connection error:', err.message);
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// Get pending incoming requests
+app.get('/get-pending-requests', async (req, res) => {
+  const sbKey = process.env.SUPABASE_SERVICE_KEY;
+  const { user_id } = req.query;
+  if (!sbKey || !user_id) return res.status(400).json({ error: 'Missing params' });
+  try {
+    const result = await sbRequest('GET',
+      `connections?select=*&recipient_id=eq.${encodeURIComponent(user_id)}&status=eq.pending`,
+      null, sbKey);
+    res.json(result.data || []);
+  } catch(err) {
+    console.error('Get pending error:', err.message);
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// Respond to a connection request
+app.post('/respond-connection', async (req, res) => {
+  const sbKey = process.env.SUPABASE_SERVICE_KEY;
+  const { connection_id, status } = req.body;
+  if (!sbKey || !connection_id) return res.status(400).json({ error: 'Missing params' });
+  try {
+    const payload = JSON.stringify({ status });
+    const options = {
+      hostname: 'jfenghwapvzvnowifsut.supabase.co',
+      path: `/rest/v1/connections?id=eq.${connection_id}`,
+      method: 'PATCH',
+      headers: {
+        'Content-Type': 'application/json',
+        'apikey': sbKey,
+        'Authorization': 'Bearer ' + sbKey,
+        'Prefer': 'return=minimal',
+        'Content-Length': Buffer.byteLength(payload)
+      }
+    };
+    const apiReq = https.request(options, (apiRes) => {
+      let data = '';
+      apiRes.on('data', chunk => data += chunk);
+      apiRes.on('end', () => {
+        console.log('Connection response:', apiRes.statusCode);
+        res.json({ success: true });
+      });
+    });
+    apiReq.on('error', (err) => res.status(500).json({ error: err.message }));
+    apiReq.write(payload);
+    apiReq.end();
+  } catch(err) {
+    console.error('Respond connection error:', err.message);
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// Get accepted connections
+app.get('/get-connections', async (req, res) => {
+  const sbKey = process.env.SUPABASE_SERVICE_KEY;
+  const { user_id } = req.query;
+  if (!sbKey || !user_id) return res.status(400).json({ error: 'Missing params' });
+  try {
+    const result = await sbRequest('GET',
+      `connections?select=*&or=(requester_id.eq.${user_id},recipient_id.eq.${user_id})&status=eq.accepted`,
+      null, sbKey);
+    res.json(result.data || []);
+  } catch(err) {
+    console.error('Get connections error:', err.message);
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// Send a direct message
+app.post('/send-dm', async (req, res) => {
+  const sbKey = process.env.SUPABASE_SERVICE_KEY;
+  const { connection_id, sender_id, content } = req.body;
+  if (!sbKey || !connection_id || !sender_id || !content) return res.status(400).json({ error: 'Missing params' });
+  try {
+    const result = await sbRequest('POST', 'direct-messages', {
+      connection_id, sender_id, content, read: false
+    }, sbKey);
+    console.log('DM sent:', result.status);
+    res.json({ success: true });
+  } catch(err) {
+    console.error('Send DM error:', err.message);
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// Get DMs for a connection
+app.get('/get-dms', async (req, res) => {
+  const sbKey = process.env.SUPABASE_SERVICE_KEY;
+  const { connection_id } = req.query;
+  if (!sbKey || !connection_id) return res.status(400).json({ error: 'Missing params' });
+  try {
+    const result = await sbRequest('GET',
+      `direct-messages?select=*&connection_id=eq.${encodeURIComponent(connection_id)}&order=created_at.asc&limit=100`,
+      null, sbKey);
+    res.json(result.data || []);
+  } catch(err) {
+    console.error('Get DMs error:', err.message);
+    res.status(500).json({ error: err.message });
+  }
+});
+
 const PORT = process.env.PORT || 3000;
 app.listen(PORT, () => console.log('Chris is running on port ' + PORT));
