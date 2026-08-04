@@ -318,23 +318,35 @@ function sbRequest(method, path, body, sbKey) {
   });
 }
 
+// Helper to get user profile by auth user id
+async function getUserProfile(userId, sbKey) {
+  try {
+    const result = await sbRequest('GET', `Users?select=name,avatar,email&email=eq.${encodeURIComponent(userId)}`, null, sbKey);
+    if (result.data && result.data.length > 0) return result.data[0];
+    return { name: 'A builder', avatar: '🏔️' };
+  } catch(err) {
+    return { name: 'A builder', avatar: '🏔️' };
+  }
+}
+
 // Get a suggested connection based on shared pillar
 app.get('/get-suggestion', async (req, res) => {
   const sbKey = process.env.SUPABASE_SERVICE_KEY;
   const { user_id, pillar } = req.query;
   if (!sbKey || !user_id) return res.status(400).json({ error: 'Missing params' });
   try {
-    // Get users who share the same pillar and are not already connected
     const result = await sbRequest('GET',
-      `Users?select=*&id=neq.${encodeURIComponent(user_id)}&limit=10`,
+      `Users?select=*&limit=20`,
       null, sbKey);
-    // Get existing connections for this user
     const conns = await sbRequest('GET',
       `connections?select=*&or=(requester_id.eq.${user_id},recipient_id.eq.${user_id})`,
       null, sbKey);
     const connectedIds = (conns.data || []).flatMap(c => [c.requester_id, c.recipient_id]);
     const suggestions = (result.data || []).filter(u =>
-      u.id !== user_id && !connectedIds.includes(u.id)
+      u.id !== user_id &&
+      u.email !== user_id &&
+      !connectedIds.includes(u.id) &&
+      !connectedIds.includes(u.email)
     );
     const suggestion = suggestions[Math.floor(Math.random() * suggestions.length)] || null;
     res.json(suggestion);
@@ -347,11 +359,17 @@ app.get('/get-suggestion', async (req, res) => {
 // Send a connection request
 app.post('/send-connection-request', async (req, res) => {
   const sbKey = process.env.SUPABASE_SERVICE_KEY;
-  const { requester_id, recipient_id, opener, pillar } = req.body;
+  const { requester_id, recipient_id, opener, pillar, requester_name, requester_avatar } = req.body;
   if (!sbKey || !requester_id || !recipient_id) return res.status(400).json({ error: 'Missing params' });
   try {
     const result = await sbRequest('POST', 'connections', {
-      requester_id, recipient_id, opener, pillar, status: 'pending'
+      requester_id,
+      recipient_id,
+      opener,
+      pillar,
+      status: 'pending',
+      requester_name: requester_name || 'A builder',
+      requester_avatar: requester_avatar || '🏔️'
     }, sbKey);
     console.log('Connection request sent:', result.status);
     res.json({ success: true });
@@ -413,7 +431,7 @@ app.post('/respond-connection', async (req, res) => {
   }
 });
 
-// Get accepted connections
+// Get accepted connections with partner names
 app.get('/get-connections', async (req, res) => {
   const sbKey = process.env.SUPABASE_SERVICE_KEY;
   const { user_id } = req.query;
@@ -422,7 +440,21 @@ app.get('/get-connections', async (req, res) => {
     const result = await sbRequest('GET',
       `connections?select=*&or=(requester_id.eq.${user_id},recipient_id.eq.${user_id})&status=eq.accepted`,
       null, sbKey);
-    res.json(result.data || []);
+    const connections = result.data || [];
+
+    // Enrich with partner names
+    const enriched = await Promise.all(connections.map(async (c) => {
+      const partnerId = c.requester_id === user_id ? c.recipient_id : c.requester_id;
+      const partnerProfile = await getUserProfile(partnerId, sbKey);
+      return {
+        ...c,
+        partner_id: partnerId,
+        partner_name: partnerProfile.name || 'A builder',
+        partner_avatar: partnerProfile.avatar || '🏔️'
+      };
+    }));
+
+    res.json(enriched);
   } catch(err) {
     console.error('Get connections error:', err.message);
     res.status(500).json({ error: err.message });
@@ -432,11 +464,16 @@ app.get('/get-connections', async (req, res) => {
 // Send a direct message
 app.post('/send-dm', async (req, res) => {
   const sbKey = process.env.SUPABASE_SERVICE_KEY;
-  const { connection_id, sender_id, content } = req.body;
+  const { connection_id, sender_id, content, sender_name, sender_avatar } = req.body;
   if (!sbKey || !connection_id || !sender_id || !content) return res.status(400).json({ error: 'Missing params' });
   try {
     const result = await sbRequest('POST', 'direct-messages', {
-      connection_id, sender_id, content, read: false
+      connection_id,
+      sender_id,
+      content,
+      sender_name: sender_name || 'A builder',
+      sender_avatar: sender_avatar || '🏔️',
+      read: false
     }, sbKey);
     console.log('DM sent:', result.status);
     res.json({ success: true });
