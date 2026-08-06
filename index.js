@@ -1,7 +1,7 @@
 const express = require('express');
 const https = require('https');
 const app = express();
-
+app.use('/stripe-webhook', express.raw({type: 'application/json'}));
 app.use(express.json());
 app.use((req, res, next) => {
   res.header('Access-Control-Allow-Origin', '*');
@@ -498,6 +498,86 @@ app.get('/get-dms', async (req, res) => {
     res.status(500).json({ error: err.message });
   }
 });
+// ══ STRIPE WEBHOOK ══
+app.post('/stripe-webhook', async (req, res) => {
+  const sbKey = process.env.SUPABASE_SERVICE_KEY;
+  const webhookSecret = process.env.STRIPE_WEBHOOK_SECRET;
+  if (!webhookSecret) return res.status(500).json({ error: 'No webhook secret' });
 
+  const signature = req.headers['stripe-signature'];
+  let event;
+  try {
+    const crypto = require('crypto');
+    const elements = signature.split(',');
+    const timestamp = elements.find(e => e.startsWith('t=')).split('=')[1];
+    const sigV1 = elements.find(e => e.startsWith('v1=')).split('=')[1];
+    const hmac = crypto.createHmac('sha256', webhookSecret);
+    hmac.update(`${timestamp}.${req.body}`);
+    if (hmac.digest('hex') !== sigV1) return res.status(400).json({ error: 'Invalid signature' });
+    event = JSON.parse(req.body);
+  } catch(err) {
+    return res.status(400).json({ error: err.message });
+  }
+
+  console.log('Stripe event:', event.type);
+
+  if (event.type === 'customer.subscription.created' || event.type === 'customer.subscription.updated') {
+    const sub = event.data.object;
+    const email = sub.customer_email || '';
+    const priceId = sub.items?.data?.[0]?.price?.id || '';
+    const tier = priceId.includes('plus') ? 'premium_plus' : 'premium';
+
+    if (sub.status === 'active' && email) {
+      const payload = JSON.stringify({ tier });
+      const options = {
+        hostname: 'jfenghwapvzvnowifsut.supabase.co',
+        path: `/rest/v1/Users?email=eq.${encodeURIComponent(email)}`,
+        method: 'PATCH',
+        headers: {
+          'Content-Type': 'application/json',
+          'apikey': sbKey,
+          'Authorization': 'Bearer ' + sbKey,
+          'Prefer': 'return=minimal',
+          'Content-Length': Buffer.byteLength(payload)
+        }
+      };
+      const apiReq = https.request(options, (apiRes) => {
+        apiRes.on('data', () => {});
+        apiRes.on('end', () => console.log(`${email} updated to ${tier}:`, apiRes.statusCode));
+      });
+      apiReq.on('error', err => console.error('Tier update error:', err.message));
+      apiReq.write(payload);
+      apiReq.end();
+    }
+  }
+
+  if (event.type === 'customer.subscription.deleted') {
+    const email = event.data.object.customer_email || '';
+    if (email) {
+      const payload = JSON.stringify({ tier: 'free' });
+      const options = {
+        hostname: 'jfenghwapvzvnowifsut.supabase.co',
+        path: `/rest/v1/Users?email=eq.${encodeURIComponent(email)}`,
+        method: 'PATCH',
+        headers: {
+          'Content-Type': 'application/json',
+          'apikey': sbKey,
+          'Authorization': 'Bearer ' + sbKey,
+          'Prefer': 'return=minimal',
+          'Content-Length': Buffer.byteLength(payload)
+        }
+      };
+      const apiReq = https.request(options, (apiRes) => {
+        apiRes.on('data', () => {});
+        apiRes.on('end', () => console.log(`${email} downgraded to free:`, apiRes.statusCode));
+      });
+      apiReq.on('error', err => console.error('Downgrade error:', err.message));
+      apiReq.write(payload);
+      apiReq.end();
+    }
+  }
+
+  res.json({ received: true });
+});
 const PORT = process.env.PORT || 3000;
 app.listen(PORT, () => console.log('Chris is running on port ' + PORT));
