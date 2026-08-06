@@ -525,7 +525,7 @@ app.post('/stripe-webhook', async (req, res) => {
     const sub = event.data.object;
     const email = sub.customer_email || '';
     const priceId = sub.items?.data?.[0]?.price?.id || '';
-    const tier = priceId.includes('plus') ? 'premium_plus' : 'premium';
+    const tier = priceId === 'price_1TyptVHVR1z3Em4RQIWHDYat' ? 'premium_plus' : priceId === 'price_1TyptZHVR1z3Em4R8zR7f826' ? 'premium' : 'free';
 
     if (sub.status === 'active' && email) {
       const payload = JSON.stringify({ tier });
