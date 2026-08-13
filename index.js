@@ -579,5 +579,38 @@ app.post('/stripe-webhook', async (req, res) => {
 
   res.json({ received: true });
 });
+app.get('/get-user-tier', async (req, res) => {
+  const sbKey = process.env.SUPABASE_SERVICE_KEY;
+  const { email } = req.query;
+  if (!sbKey || !email) return res.status(400).json({ error: 'Missing email' });
+
+  const options = {
+    hostname: 'jfenghwapvzvnowifsut.supabase.co',
+    path: `/rest/v1/Users?select=tier&email=eq.${encodeURIComponent(email)}`,
+    method: 'GET',
+    headers: {
+      'Content-Type': 'application/json',
+      'apikey': sbKey,
+      'Authorization': 'Bearer ' + sbKey
+    }
+  };
+
+  const apiReq = https.request(options, (apiRes) => {
+    let data = '';
+    apiRes.on('data', chunk => data += chunk);
+    apiRes.on('end', () => {
+      try {
+        const users = JSON.parse(data);
+        const tier = users && users.length > 0 ? users[0].tier : 'free';
+        res.json({ tier: tier || 'free' });
+      } catch(err) {
+        res.json({ tier: 'free' });
+      }
+    });
+  });
+
+  apiReq.on('error', (err) => res.status(500).json({ error: err.message }));
+  apiReq.end();
+});
 const PORT = process.env.PORT || 3000;
 app.listen(PORT, () => console.log('Chris is running on port ' + PORT));
