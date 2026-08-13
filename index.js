@@ -612,5 +612,33 @@ app.get('/get-user-tier', async (req, res) => {
   apiReq.on('error', (err) => res.status(500).json({ error: err.message }));
   apiReq.end();
 });
+app.get('/get-conversations', async (req, res) => {
+  const sbKey = process.env.SUPABASE_SERVICE_KEY;
+  const { user_id } = req.query;
+  if (!sbKey || !user_id) return res.status(400).json({ error: 'Missing user_id' });
+
+  const options = {
+    hostname: 'jfenghwapvzvnowifsut.supabase.co',
+    path: `/rest/v1/conversations?select=*&user_id=eq.${encodeURIComponent(user_id)}&order=created_at.desc&limit=200`,
+    method: 'GET',
+    headers: {
+      'Content-Type': 'application/json',
+      'apikey': sbKey,
+      'Authorization': 'Bearer ' + sbKey
+    }
+  };
+
+  const apiReq = https.request(options, (apiRes) => {
+    let data = '';
+    apiRes.on('data', chunk => data += chunk);
+    apiRes.on('end', () => {
+      res.header('Content-Type', 'application/json');
+      res.send(data);
+    });
+  });
+
+  apiReq.on('error', (err) => res.status(500).json({ error: err.message }));
+  apiReq.end();
+});
 const PORT = process.env.PORT || 3000;
 app.listen(PORT, () => console.log('Chris is running on port ' + PORT));
