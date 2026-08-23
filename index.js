@@ -640,5 +640,65 @@ app.get('/get-conversations', async (req, res) => {
   apiReq.on('error', (err) => res.status(500).json({ error: err.message }));
   apiReq.end();
 });
+app.post('/check-chris-session', async (req, res) => {
+  const sbKey = process.env.SUPABASE_SERVICE_KEY;
+  const { email } = req.body;
+  if (!sbKey || !email) return res.status(400).json({ error: 'Missing email' });
+
+  const today = new Date().toDateString();
+
+  // First check current value
+  const getOptions = {
+    hostname: 'jfenghwapvzvnowifsut.supabase.co',
+    path: `/rest/v1/Users?select=last_chris_session&email=eq.${encodeURIComponent(email)}`,
+    method: 'GET',
+    headers: {
+      'Content-Type': 'application/json',
+      'apikey': sbKey,
+      'Authorization': 'Bearer ' + sbKey
+    }
+  };
+
+  const getReq = https.request(getOptions, (getRes) => {
+    let data = '';
+    getRes.on('data', chunk => data += chunk);
+    getRes.on('end', () => {
+      try {
+        const users = JSON.parse(data);
+        const lastSession = users && users.length > 0 ? users[0].last_chris_session : null;
+
+        if (lastSession === today) {
+          return res.json({ allowed: false });
+        }
+
+        // Update to today
+        const payload = JSON.stringify({ last_chris_session: today });
+        const patchOptions = {
+          hostname: 'jfenghwapvzvnowifsut.supabase.co',
+          path: `/rest/v1/Users?email=eq.${encodeURIComponent(email)}`,
+          method: 'PATCH',
+          headers: {
+            'Content-Type': 'application/json',
+            'apikey': sbKey,
+            'Authorization': 'Bearer ' + sbKey,
+            'Prefer': 'return=minimal',
+            'Content-Length': Buffer.byteLength(payload)
+          }
+        };
+        const patchReq = https.request(patchOptions, (patchRes) => {
+          patchRes.on('data', () => {});
+          patchRes.on('end', () => res.json({ allowed: true }));
+        });
+        patchReq.on('error', err => res.status(500).json({ error: err.message }));
+        patchReq.write(payload);
+        patchReq.end();
+      } catch(err) {
+        res.status(500).json({ error: err.message });
+      }
+    });
+  });
+  getReq.on('error', err => res.status(500).json({ error: err.message }));
+  getReq.end();
+});
 const PORT = process.env.PORT || 3000;
 app.listen(PORT, () => console.log('Chris is running on port ' + PORT));
